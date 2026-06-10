@@ -1,0 +1,9 @@
+.env
+data/
+__pycache__/
+*.pyc
+*.db
+.DS_Store
+.atl/
+.claude/
+tests/fixtures/*.als

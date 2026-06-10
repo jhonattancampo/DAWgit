@@ -1,0 +1,16 @@
+services:
+  dawgit:
+    build: .
+    ports:
+      - "8001:8000"
+    volumes:
+      - .:/app
+      - ${ABLETON_PROJECTS_PATH}:/ableton:ro
+      - dawgit_data:/app/data
+    environment:
+      - ABLETON_PROJECTS_PATH=/ableton
+    env_file:
+      - .env
+
+volumes:
+  dawgit_data:
