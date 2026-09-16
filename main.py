@@ -96,10 +96,10 @@ def get_snapshot(snapshot_id: int) -> SnapshotDetail:
 
 @app.get("/snapshots/{snapshot_id}/xml")
 def get_snapshot_xml(snapshot_id: int) -> dict:
-    snap = db.get_snapshot(snapshot_id)
-    if snap is None:
+    xml = db.get_snapshot_xml(snapshot_id)
+    if xml is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    return {"snapshot_id": snapshot_id, "xml": snap["xml_raw"]}
+    return {"snapshot_id": snapshot_id, "xml": xml}
 
 
 @app.get("/diff/{id_a}/{id_b}", response_model=DiffResponse)

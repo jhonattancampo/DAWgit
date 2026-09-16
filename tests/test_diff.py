@@ -1,10 +1,5 @@
 """Tests for the diff engine using parsed snapshot data."""
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from diff import diff_snapshots
 
 

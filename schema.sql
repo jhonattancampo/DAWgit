@@ -1,9 +1,18 @@
+-- Content-addressed storage for the raw LiveSet XML.
+-- hash is SHA-256 of the UNCOMPRESSED XML bytes, so it stays stable
+-- regardless of the gzip level used to store it.
+CREATE TABLE IF NOT EXISTS blobs (
+    hash TEXT PRIMARY KEY,
+    gz   BLOB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS snapshots (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     project_path TEXT    NOT NULL,
     timestamp    TEXT    NOT NULL,
     name_auto    TEXT,
-    xml_raw      TEXT    NOT NULL
+    name_user    TEXT,
+    blob_hash    TEXT    NOT NULL REFERENCES blobs(hash)
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_meta (
@@ -32,5 +41,6 @@ CREATE TABLE IF NOT EXISTS snapshot_devices (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_project  ON snapshots(project_path);
 CREATE INDEX IF NOT EXISTS idx_snapshots_time     ON snapshots(timestamp);
+CREATE INDEX IF NOT EXISTS idx_snapshots_blob     ON snapshots(blob_hash);
 CREATE INDEX IF NOT EXISTS idx_tracks_snapshot    ON snapshot_tracks(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_devices_snapshot   ON snapshot_devices(snapshot_id);
