@@ -5,10 +5,12 @@ services:
       - "8001:8000"
     volumes:
       - .:/app
-      - ${ABLETON_PROJECTS_PATH}:/ableton:ro
+      # Writable: restore has to be able to overwrite the .als
+      - ${ABLETON_PROJECTS_PATH}:/ableton
       - dawgit_data:/app/data
     environment:
       - ABLETON_PROJECTS_PATH=/ableton
+      - DB_PATH=/app/data/dawgit.db
     env_file:
       - .env
 

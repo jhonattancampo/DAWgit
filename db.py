@@ -7,7 +7,7 @@ from pathlib import Path
 
 from parser import ParsedSnapshot
 
-DB_PATH = os.environ.get("DB_PATH", "/data/dawgit.db")
+DB_PATH = os.environ.get("DB_PATH", "/app/data/dawgit.db")
 _SCHEMA = Path(__file__).with_name("schema.sql").read_text()
 
 
@@ -19,6 +19,7 @@ def _connect(path: str = DB_PATH) -> sqlite3.Connection:
 
 
 def init_db(path: str = DB_PATH) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with _connect(path) as conn:
         conn.executescript(_SCHEMA)
 
