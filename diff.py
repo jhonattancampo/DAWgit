@@ -20,10 +20,12 @@ def _build_summary(changes: list[str]) -> str:
     return f"{len(changes)} changes — {changes[0]}, {changes[1]}..."
 
 
-def _fmt_tempo_range(tempo_min: float | None, tempo_max: float | None) -> str:
-    if tempo_min is None:
-        return "none"
-    return f"{tempo_min:g}–{tempo_max:g}"
+def _fmt_tempo_range(tempo_min: float, tempo_max: float) -> str:
+    return f"{tempo_min:g}–{tempo_max:g} BPM"
+
+
+def _fmt_tempo_env(tempo_min: float, tempo_max: float, tempo_points: int) -> str:
+    return f"{_fmt_tempo_range(tempo_min, tempo_max)} ({tempo_points} pts)"
 
 
 def diff_snapshots(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
@@ -31,28 +33,40 @@ def diff_snapshots(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
     meta_b = snapshot_b["meta"]
     changes = []
 
+    tempo_a, tempo_b = meta_a["tempo"], meta_b["tempo"]
     automated_a = meta_a.get("tempo_automated", False)
     automated_b = meta_b.get("tempo_automated", False)
-    range_a = (meta_a.get("tempo_min"), meta_a.get("tempo_max"))
-    range_b = (meta_b.get("tempo_min"), meta_b.get("tempo_max"))
+    env_a = (meta_a.get("tempo_min"), meta_a.get("tempo_max"), meta_a.get("tempo_points", 0))
+    env_b = (meta_b.get("tempo_min"), meta_b.get("tempo_max"), meta_b.get("tempo_points", 0))
+    manual_changed = abs(tempo_a - tempo_b) > 0.5
 
-    tempo_changed = abs(meta_a["tempo"] - meta_b["tempo"]) > 0.5
-    range_changed = range_a != range_b
-
-    if tempo_changed or range_changed:
-        if automated_a or automated_b:
-            range_part = (
-                f", range {_fmt_tempo_range(*range_b)}"
-                if not range_changed
-                else f", range {_fmt_tempo_range(*range_a)} → {_fmt_tempo_range(*range_b)}"
-            )
+    # "Base" (Manual) and "envelope" (min/max/points) are independent axes
+    # once tempo is automated — the base value stops being what plays, so
+    # reporting them as one merged sentence (as this used to) can show a
+    # number that's outside the range the same line claims is audible.
+    if automated_a and not automated_b:
+        changes.append(
+            f"Automation de tempo desactivada: ahora fijo en {tempo_b:g} BPM — "
+            f"antes corría {_fmt_tempo_env(*env_a)}"
+        )
+    elif not automated_a and automated_b:
+        changes.append(
+            f"Automation de tempo activada: ahora corre {_fmt_tempo_env(*env_b)} — "
+            f"antes fijo en {tempo_a:g} BPM"
+        )
+    elif automated_a and automated_b:
+        if manual_changed:
             changes.append(
-                f"Tempo (automated): base {meta_a['tempo']:g} → {meta_b['tempo']:g} BPM{range_part}"
+                f"Tempo base: {tempo_a:g} → {tempo_b:g} BPM "
+                f"(manda la automation: {_fmt_tempo_range(env_b[0], env_b[1])})"
             )
-        elif tempo_changed:
+        if env_a != env_b:
             changes.append(
-                f"Tempo changed: {meta_a['tempo']:g} → {meta_b['tempo']:g} BPM"
+                f"Automation de tempo cambió: ahora corre {_fmt_tempo_env(*env_b)} — "
+                f"antes {_fmt_tempo_env(*env_a)}"
             )
+    elif manual_changed:  # neither automated
+        changes.append(f"Tempo changed: {tempo_a:g} → {tempo_b:g} BPM")
 
     num_a, den_a = meta_a["time_sig_num"], meta_a["time_sig_den"]
     num_b, den_b = meta_b["time_sig_num"], meta_b["time_sig_den"]
