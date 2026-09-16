@@ -7,7 +7,7 @@ services:
       - .:/app
       # Writable: restore has to be able to overwrite the .als
       - ${ABLETON_PROJECTS_PATH}:/ableton
-      - dawgit_data:/app/data
+      - ~/DAWgit-data:/app/data
     environment:
       - ABLETON_PROJECTS_PATH=/ableton
       - DB_PATH=/app/data/dawgit.db
@@ -15,6 +15,3 @@ services:
       - BACKUP_DIR=/app/data/.dawgit-backup
     env_file:
       - .env
-
-volumes:
-  dawgit_data:
