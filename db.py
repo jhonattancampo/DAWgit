@@ -173,3 +173,31 @@ def get_snapshot_gz(snapshot_id: int, path: str | None = None) -> bytes | None:
 def get_snapshot_xml(snapshot_id: int, path: str | None = None) -> str | None:
     gz = get_snapshot_gz(snapshot_id, path=path)
     return gzip.decompress(gz).decode("utf-8") if gz is not None else None
+
+
+def update_snapshot_user_name(snapshot_id: int, name: str | None, path: str | None = None) -> bool:
+    """Set the user-supplied name. Leaves name_auto untouched."""
+    with _session(path) as conn:
+        cur = conn.execute(
+            "UPDATE snapshots SET name_user = ? WHERE id = ?", (name, snapshot_id)
+        )
+    return cur.rowcount > 0
+
+
+def delete_snapshot(snapshot_id: int, path: str | None = None) -> bool:
+    """Delete a snapshot. Meta/tracks/devices cascade; the blob is dropped
+    only once no other snapshot references it."""
+    with _session(path) as conn:
+        row = conn.execute(
+            "SELECT blob_hash FROM snapshots WHERE id = ?", (snapshot_id,)
+        ).fetchone()
+        if row is None:
+            return False
+
+        conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
+        conn.execute(
+            "DELETE FROM blobs WHERE hash = ? "
+            "AND NOT EXISTS (SELECT 1 FROM snapshots WHERE blob_hash = ?)",
+            (row["blob_hash"], row["blob_hash"]),
+        )
+    return True
