@@ -3,10 +3,27 @@
 from diff import diff_snapshots
 
 
-def _snap(tempo=120.0, num=4, den=4, tracks=None):
+def _snap(
+    tempo=120.0,
+    num=4,
+    den=4,
+    tracks=None,
+    tempo_automated=False,
+    tempo_min=None,
+    tempo_max=None,
+    tempo_points=0,
+):
     """Build a minimal snapshot dict for diff testing."""
     return {
-        "meta": {"tempo": tempo, "time_sig_num": num, "time_sig_den": den},
+        "meta": {
+            "tempo": tempo,
+            "time_sig_num": num,
+            "time_sig_den": den,
+            "tempo_automated": tempo_automated,
+            "tempo_min": tempo_min,
+            "tempo_max": tempo_max,
+            "tempo_points": tempo_points,
+        },
         "tracks": tracks or [],
     }
 
@@ -33,6 +50,44 @@ def test_tempo_change():
     assert "120" in result.changes[0] and "128" in result.changes[0]
     assert result.summary == "Tempo changed: 120 → 128 BPM"
     print(f"  Test 2 — tempo change:        ✓  {result.summary!r}")
+
+
+def test_tempo_change_with_automation_reports_range():
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    b = _snap(tempo=110.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert result.changes[0] == "Tempo (automated): base 120 → 110 BPM, range 80–120"
+    print(f"  Test 2b — automated tempo change: ✓  {result.changes[0]!r}")
+
+
+def test_tempo_automation_range_change_without_manual_change_is_reported():
+    """Manual (base) tempo unchanged, but the automation curve itself moved —
+    today that's invisible; the diff must surface it."""
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    b = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=140.0, tempo_points=9)
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert "range 80–120 → 80–140" in result.changes[0]
+    print(f"  Test 2c — automation range change: ✓  {result.changes[0]!r}")
+
+
+def test_tempo_automation_added_without_manual_change():
+    a = _snap(tempo=120.0)
+    b = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=5)
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert "range none → 80–120" in result.changes[0]
+    print(f"  Test 2d — automation added: ✓  {result.changes[0]!r}")
+
+
+def test_non_automated_tempo_change_is_unaffected():
+    """A set with no tempo automation must report exactly as it did before
+    this feature existed."""
+    a = _snap(tempo=120.0)
+    b = _snap(tempo=128.0)
+    result = diff_snapshots(a, b)
+    assert result.summary == "Tempo changed: 120 → 128 BPM"
 
 
 def test_track_added():
@@ -101,9 +156,13 @@ if __name__ == "__main__":
     print("Running diff tests...\n")
     test_identical_snapshots()
     test_tempo_change()
+    test_tempo_change_with_automation_reports_range()
+    test_tempo_automation_range_change_without_manual_change_is_reported()
+    test_tempo_automation_added_without_manual_change()
+    test_non_automated_tempo_change_is_unaffected()
     test_track_added()
     test_track_removed()
     test_track_renamed()
     test_device_added()
     test_multiple_changes_summary_truncated()
-    print("\n7/7 tests passed.")
+    print("\n11/11 tests passed.")

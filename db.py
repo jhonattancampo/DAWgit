@@ -81,9 +81,21 @@ def save_snapshot(
         snapshot_id = cur.lastrowid
 
         conn.execute(
-            "INSERT INTO snapshot_meta (snapshot_id, tempo, time_sig_num, time_sig_den, track_count) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (snapshot_id, parsed.tempo, parsed.time_sig_num, parsed.time_sig_den, len(parsed.tracks)),
+            "INSERT INTO snapshot_meta "
+            "(snapshot_id, tempo, time_sig_num, time_sig_den, track_count, "
+            "tempo_automated, tempo_min, tempo_max, tempo_points) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                parsed.tempo,
+                parsed.time_sig_num,
+                parsed.time_sig_den,
+                len(parsed.tracks),
+                parsed.tempo_automated,
+                parsed.tempo_min,
+                parsed.tempo_max,
+                parsed.tempo_points,
+            ),
         )
 
         conn.executemany(

@@ -16,11 +16,15 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_meta (
-    snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
-    tempo        REAL    NOT NULL,
-    time_sig_num INTEGER NOT NULL,
-    time_sig_den INTEGER NOT NULL,
-    track_count  INTEGER NOT NULL
+    snapshot_id     INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    tempo           REAL    NOT NULL,
+    time_sig_num    INTEGER NOT NULL,
+    time_sig_den    INTEGER NOT NULL,
+    track_count     INTEGER NOT NULL,
+    tempo_automated INTEGER NOT NULL DEFAULT 0,
+    tempo_min       REAL,
+    tempo_max       REAL,
+    tempo_points    INTEGER NOT NULL DEFAULT 0
 );
 
 -- track_type: MIDI | Audio | Return | Master | Group

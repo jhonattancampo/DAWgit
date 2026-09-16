@@ -36,6 +36,10 @@ def parsed_to_dict(parsed: ParsedSnapshot) -> dict:
             "time_sig_num": parsed.time_sig_num,
             "time_sig_den": parsed.time_sig_den,
             "track_count": len(parsed.tracks),
+            "tempo_automated": parsed.tempo_automated,
+            "tempo_min": parsed.tempo_min,
+            "tempo_max": parsed.tempo_max,
+            "tempo_points": parsed.tempo_points,
         },
         "tracks": [
             {

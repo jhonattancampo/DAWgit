@@ -1,10 +1,12 @@
 """Tests for the ALS parser against real fixture files."""
 
+import gzip
 import warnings
 from pathlib import Path
 
 import db
 import snapshots
+from conftest import with_tempo_automation
 from parser import parse_als
 
 
@@ -50,6 +52,30 @@ def test_save_and_retrieve(db_path, fixture_path, fixture_xml):
     assert "Reverb" in reverb_track["devices"], (
         f"Reverb device missing: {reverb_track['devices']}"
     )
+
+
+def test_tempo_baseline_point_is_not_automation(fixture_path):
+    """Ableton writes a lone envelope point matching Manual on every set,
+    even when tempo was never touched. That baseline must not read as
+    automated — otherwise every ordinary set would trip the new copy."""
+    parsed = parse_als(str(fixture_path))
+    assert parsed.tempo_automated is False
+    assert parsed.tempo_min is None
+    assert parsed.tempo_max is None
+    assert parsed.tempo_points == 0
+
+
+def test_tempo_automation_is_extracted(fixture_xml, tmp_path):
+    automated_xml = with_tempo_automation(fixture_xml, [80, 80, 80, 120, 90, 90, 114])
+    als = tmp_path / "automated.als"
+    als.write_bytes(gzip.compress(automated_xml, 6))
+
+    parsed = parse_als(str(als))
+
+    assert parsed.tempo_automated is True
+    assert parsed.tempo_min == 80
+    assert parsed.tempo_max == 120
+    assert parsed.tempo_points == 7
 
 
 def test_master_track_lookup_prefers_master_then_main(fixture_xml):

@@ -28,6 +28,10 @@ class ParsedSnapshot:
     time_sig_num: int
     time_sig_den: int
     tracks: list[ParsedTrack] = field(default_factory=list)
+    tempo_automated: bool = False
+    tempo_min: float | None = None
+    tempo_max: float | None = None
+    tempo_points: int = 0
 
 
 def _find_master_track(liveset: ET.Element) -> ET.Element | None:
@@ -75,6 +79,43 @@ def _extract_tempo(liveset: ET.Element) -> float:
         "Could not find Tempo element. Ableton version may not be supported. "
         "Please report this .als file."
     )
+
+
+def _extract_tempo_automation(liveset: ET.Element) -> tuple[bool, float | None, float | None, int]:
+    """Read the master track's tempo automation envelope, if any.
+
+    Ableton always writes a lone envelope point matching the current Manual
+    value even when tempo was never automated, so a single point is treated
+    the same as "no envelope" — only 2+ points count as real automation.
+    """
+    master = _find_master_track(liveset)
+    if master is None:
+        return False, None, None, 0
+
+    target = master.find("DeviceChain/Mixer/Tempo/AutomationTarget")
+    if target is None:
+        return False, None, None, 0
+    target_id = target.get("Id")
+
+    envelopes = master.find("AutomationEnvelopes/Envelopes")
+    if envelopes is None:
+        return False, None, None, 0
+
+    for envelope in envelopes.findall("AutomationEnvelope"):
+        pointee = envelope.find("EnvelopeTarget/PointeeId")
+        if pointee is None or pointee.get("Value") != target_id:
+            continue
+
+        events = envelope.find("Automation/Events")
+        if events is None:
+            return False, None, None, 0
+
+        values = [float(ev.get("Value")) for ev in events]
+        if len(values) <= 1:
+            return False, None, None, 0
+        return True, min(values), max(values), len(values)
+
+    return False, None, None, 0
 
 
 def _extract_time_sig(liveset: ET.Element) -> tuple[int, int]:
@@ -131,10 +172,15 @@ def parse_als(path: str) -> ParsedSnapshot:
     tempo = _extract_tempo(liveset)
     time_sig_num, time_sig_den = _extract_time_sig(liveset)
     tracks = _extract_tracks(liveset)
+    tempo_automated, tempo_min, tempo_max, tempo_points = _extract_tempo_automation(liveset)
 
     return ParsedSnapshot(
         tempo=tempo,
         time_sig_num=time_sig_num,
         time_sig_den=time_sig_den,
         tracks=tracks,
+        tempo_automated=tempo_automated,
+        tempo_min=tempo_min,
+        tempo_max=tempo_max,
+        tempo_points=tempo_points,
     )

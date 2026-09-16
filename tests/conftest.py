@@ -66,6 +66,48 @@ def with_tempo(xml_bytes: bytes, bpm: float) -> bytes:
     return ET.tostring(root, encoding="utf-8")
 
 
+def with_tempo_automation(xml_bytes: bytes, values: list[float]) -> bytes:
+    """Structural change: give the master track's tempo real automation.
+
+    Ableton always writes a lone envelope point matching Manual even when
+    tempo was never automated — this replaces that baseline point with one
+    FloatEvent per value in `values`, so the parser sees real automation.
+    """
+    root = ET.fromstring(xml_bytes)
+    liveset = root.find("LiveSet")
+    assert liveset is not None, "fixture has no <LiveSet> element"
+
+    master = _find_master_track(liveset)
+    assert master is not None, "fixture has no master/main track"
+
+    target = master.find("DeviceChain/Mixer/Tempo/AutomationTarget")
+    assert target is not None, "master track has no tempo AutomationTarget"
+    target_id = target.get("Id")
+
+    envelopes = master.find("AutomationEnvelopes/Envelopes")
+    assert envelopes is not None, "master track has no AutomationEnvelopes/Envelopes"
+
+    envelope = next(
+        (
+            e for e in envelopes.findall("AutomationEnvelope")
+            if (p := e.find("EnvelopeTarget/PointeeId")) is not None
+            and p.get("Value") == target_id
+        ),
+        None,
+    )
+    assert envelope is not None, "master track has no tempo automation envelope"
+
+    events = envelope.find("Automation/Events")
+    assert events is not None, "tempo envelope has no Events container"
+
+    for child in list(events):
+        events.remove(child)
+    for i, value in enumerate(values):
+        ET.SubElement(events, "FloatEvent", {"Id": str(i), "Time": str(i * 4), "Value": str(value)})
+
+    return ET.tostring(root, encoding="utf-8")
+
+
 def with_cosmetic_change(xml_bytes: bytes, marker: str = "dawgit") -> bytes:
     """Different bytes, identical parsed state — stands in for a MIDI edit,
     which the parser cannot see either."""

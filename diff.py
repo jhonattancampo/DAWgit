@@ -19,15 +19,39 @@ def _build_summary(changes: list[str]) -> str:
     return f"{len(changes)} changes — {changes[0]}, {changes[1]}..."
 
 
+def _fmt_tempo_range(tempo_min: float | None, tempo_max: float | None) -> str:
+    if tempo_min is None:
+        return "none"
+    return f"{tempo_min:g}–{tempo_max:g}"
+
+
 def diff_snapshots(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
     meta_a = snapshot_a["meta"]
     meta_b = snapshot_b["meta"]
     changes = []
 
-    if abs(meta_a["tempo"] - meta_b["tempo"]) > 0.5:
-        changes.append(
-            f"Tempo changed: {meta_a['tempo']:g} → {meta_b['tempo']:g} BPM"
-        )
+    automated_a = meta_a.get("tempo_automated", False)
+    automated_b = meta_b.get("tempo_automated", False)
+    range_a = (meta_a.get("tempo_min"), meta_a.get("tempo_max"))
+    range_b = (meta_b.get("tempo_min"), meta_b.get("tempo_max"))
+
+    tempo_changed = abs(meta_a["tempo"] - meta_b["tempo"]) > 0.5
+    range_changed = range_a != range_b
+
+    if tempo_changed or range_changed:
+        if automated_a or automated_b:
+            range_part = (
+                f", range {_fmt_tempo_range(*range_b)}"
+                if not range_changed
+                else f", range {_fmt_tempo_range(*range_a)} → {_fmt_tempo_range(*range_b)}"
+            )
+            changes.append(
+                f"Tempo (automated): base {meta_a['tempo']:g} → {meta_b['tempo']:g} BPM{range_part}"
+            )
+        elif tempo_changed:
+            changes.append(
+                f"Tempo changed: {meta_a['tempo']:g} → {meta_b['tempo']:g} BPM"
+            )
 
     num_a, den_a = meta_a["time_sig_num"], meta_a["time_sig_den"]
     num_b, den_b = meta_b["time_sig_num"], meta_b["time_sig_den"]
