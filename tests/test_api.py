@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 import db
 import restore as restore_service
 import snapshots
-from conftest import row_count, with_tempo, write_als
+from conftest import row_count, with_tempo, with_tempo_automation, write_als
 from parser import parse_als
 
 
@@ -44,6 +44,32 @@ def test_health_reports_db_and_watcher(client):
         "watcher_active": False,
         "watch_path": None,
     }
+
+
+def test_get_snapshot_reports_tempo_automation(client, db_path, project, fixture_xml):
+    """Regression: snapshot_meta had the automation fields, but the response
+    model and _snapshot_to_detail never mapped them — the client always saw
+    a bare `tempo`. Assert on the actual HTTP response, not the DB row."""
+    write_als(project, with_tempo_automation(fixture_xml, [80, 80, 80, 120, 90, 90, 114]))
+    snapshot_id = _snapshot_of(project, db_path)
+
+    body = client.get(f"/snapshots/{snapshot_id}").json()
+
+    assert body["tempo_automated"] is True
+    assert body["tempo_min"] == 80
+    assert body["tempo_max"] == 120
+    assert body["tempo_points"] == 7
+
+
+def test_get_snapshot_without_automation_reports_null_range(client, db_path, project):
+    snapshot_id = _snapshot_of(project, db_path)
+
+    body = client.get(f"/snapshots/{snapshot_id}").json()
+
+    assert body["tempo_automated"] is False
+    assert body["tempo_min"] is None
+    assert body["tempo_max"] is None
+    assert body["tempo_points"] == 0
 
 
 def test_patch_sets_name_user_and_preserves_name_auto(client, db_path, project):

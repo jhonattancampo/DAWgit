@@ -64,6 +64,10 @@ def _snapshot_to_detail(snap: dict) -> SnapshotDetail:
         name_user=snap["name_user"],
         project_path=snap["project_path"],
         tempo=meta["tempo"],
+        tempo_automated=bool(meta["tempo_automated"]),
+        tempo_min=meta["tempo_min"],
+        tempo_max=meta["tempo_max"],
+        tempo_points=meta["tempo_points"],
         time_sig=f"{meta['time_sig_num']}/{meta['time_sig_den']}",
         tracks=[
             TrackDetail(

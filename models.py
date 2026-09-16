@@ -25,6 +25,10 @@ class SnapshotDetail(BaseModel):
     name_user: str | None
     project_path: str
     tempo: float
+    tempo_automated: bool
+    tempo_min: float | None
+    tempo_max: float | None
+    tempo_points: int
     time_sig: str
     tracks: list[TrackDetail]
 
