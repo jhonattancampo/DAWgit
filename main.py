@@ -9,10 +9,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import db
+import restore as restore_service
 import watcher
 from diff import diff_snapshots
 from models import (
     DiffResponse,
+    RestoreResponse,
     SnapshotDetail,
     SnapshotListItem,
     TrackDetail,
@@ -100,6 +102,27 @@ def get_snapshot_xml(snapshot_id: int) -> dict:
     if xml is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return {"snapshot_id": snapshot_id, "xml": xml}
+
+
+@app.post("/snapshots/{snapshot_id}/restore", response_model=RestoreResponse)
+def restore_snapshot(snapshot_id: int) -> RestoreResponse:
+    try:
+        result = restore_service.restore_snapshot(snapshot_id)
+    except restore_service.SnapshotNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except restore_service.ProjectPathUnavailable as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.exception("Restore failed for snapshot %d", snapshot_id)
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
+
+    return RestoreResponse(
+        snapshot_id=result.snapshot_id,
+        project_path=result.project_path,
+        backup_path=result.backup_path,
+        new_snapshot_id=result.new_snapshot_id,
+        warning=result.warning,
+    )
 
 
 @app.get("/diff/{id_a}/{id_b}", response_model=DiffResponse)

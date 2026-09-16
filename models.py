@@ -34,6 +34,14 @@ class DiffResponse(BaseModel):
     summary: str
 
 
+class RestoreResponse(BaseModel):
+    snapshot_id: int
+    project_path: str
+    backup_path: str | None
+    new_snapshot_id: int | None
+    warning: str
+
+
 class WatchRequest(BaseModel):
     path: str
 

@@ -11,6 +11,8 @@ services:
     environment:
       - ABLETON_PROJECTS_PATH=/ableton
       - DB_PATH=/app/data/dawgit.db
+      # Backups live outside the watched tree so they never trigger snapshots
+      - BACKUP_DIR=/app/data/.dawgit-backup
     env_file:
       - .env
 
