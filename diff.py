@@ -1,5 +1,6 @@
 """Diff engine: compares two snapshots and produces human-readable change descriptions."""
 
+from collections import Counter
 from dataclasses import dataclass
 
 
@@ -79,12 +80,22 @@ def diff_snapshots(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
 
         # Devices are persisted per track in snapshot_devices and returned by
         # db.get_snapshot; callers building a snapshot dict by hand may omit them.
-        devices_a = set(ta.get("devices") or [])
-        devices_b = set(tb.get("devices") or [])
+        #
+        # Counter, not set: a second instance of the same plugin (two EQ
+        # Eights on one track) is a real change a set would silently
+        # collapse. Signal-chain order isn't tracked here — that would need
+        # real sequence alignment to tell "reordered" apart from "removed
+        # one, added a different one at that slot", which is more than an
+        # MVP text diff needs.
+        devices_a = Counter(ta.get("devices") or [])
+        devices_b = Counter(tb.get("devices") or [])
         track_name = tb["track_name"]
-        for dev in devices_b - devices_a:
-            changes.append(f"Device '{dev}' added to '{track_name}'")
-        for dev in devices_a - devices_b:
-            changes.append(f"Device '{dev}' removed from '{track_name}'")
+
+        for dev, n in sorted((devices_b - devices_a).items()):
+            label = f"'{dev}' ×{n}" if n > 1 else f"'{dev}'"
+            changes.append(f"Device {label} added to '{track_name}'")
+        for dev, n in sorted((devices_a - devices_b).items()):
+            label = f"'{dev}' ×{n}" if n > 1 else f"'{dev}'"
+            changes.append(f"Device {label} removed from '{track_name}'")
 
     return DiffResult(changes=changes, summary=_build_summary(changes))

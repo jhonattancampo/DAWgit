@@ -1,13 +1,15 @@
 """Tests for the ALS parser against real fixture files."""
 
 import gzip
+import logging
 import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import db
 import snapshots
-from conftest import with_tempo_automation
-from parser import parse_als
+from conftest import with_duplicate_device, with_plugin_device, with_tempo_automation
+from parser import _device_name, parse_als
 
 
 def test_save_and_retrieve(db_path, fixture_path, fixture_xml):
@@ -76,6 +78,58 @@ def test_tempo_automation_is_extracted(fixture_xml, tmp_path):
     assert parsed.tempo_min == 80
     assert parsed.tempo_max == 120
     assert parsed.tempo_points == 7
+
+
+def test_duplicate_devices_are_preserved_in_the_parsed_list(fixture_xml, tmp_path):
+    """The parsed list isn't deduped — diff.py's set() was the one collapsing
+    a second device instance, not the parser."""
+    xml = with_duplicate_device(fixture_xml, "Bass", "Tuner")
+    als = tmp_path / "duplicate_tuner.als"
+    als.write_bytes(gzip.compress(xml, 6))
+
+    parsed = parse_als(str(als))
+    bass = next(t for t in parsed.tracks if t.track_name == "Bass")
+    assert bass.devices.count("Tuner") == 2
+
+
+def test_third_party_plugin_name_is_extracted(fixture_xml, tmp_path):
+    """Real VST3 plugin (reused from the fixture, not hand-rolled XML) must
+    resolve to its own name, not the generic 'PluginDevice' tag fallback."""
+    xml = with_plugin_device(fixture_xml, "Drum Group", source_track_name="Drum Group")
+    als = tmp_path / "with_plugin.als"
+    als.write_bytes(gzip.compress(xml, 6))
+
+    parsed = parse_als(str(als))
+    drum_group = next(t for t in parsed.tracks if t.track_name == "Drum Group")
+    assert "The Panda Rooms" in drum_group.devices
+    assert "PluginDevice" not in drum_group.devices
+
+
+def test_renamed_plugin_combines_user_name_and_plugin_name(fixture_xml, tmp_path):
+    """A device the user renamed in Ableton keeps the plugin's identity too —
+    'MyLabel (PluginName)' — since neither alone reconstructs the set later."""
+    xml = with_plugin_device(
+        fixture_xml, "Drum Group", source_track_name="Drum Group", user_name="Reverb Guitarra"
+    )
+    als = tmp_path / "renamed_plugin.als"
+    als.write_bytes(gzip.compress(xml, 6))
+
+    parsed = parse_als(str(als))
+    drum_group = next(t for t in parsed.tracks if t.track_name == "Drum Group")
+    assert "Reverb Guitarra (The Panda Rooms)" in drum_group.devices
+
+
+def test_unrecognized_device_falls_back_to_tag_and_logs_warning(caplog):
+    """No UserName, no plugin name, no DeviceId — an unsupported device shape.
+    Fall back to the tag, but warn loudly so it doesn't hide in the history."""
+    mystery = ET.fromstring("<MysteryDevice />")
+
+    with caplog.at_level(logging.WARNING, logger="parser"):
+        name = _device_name(mystery, "Bass")
+
+    assert name == "MysteryDevice"
+    assert "MysteryDevice" in caplog.text
+    assert "Bass" in caplog.text
 
 
 def test_master_track_lookup_prefers_master_then_main(fixture_xml):

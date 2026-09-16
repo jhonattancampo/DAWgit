@@ -6,7 +6,7 @@ import pytest
 
 import db
 import snapshots
-from conftest import row_count, with_cosmetic_change, with_tempo
+from conftest import row_count, with_cosmetic_change, with_duplicate_device, with_tempo
 from parser import parse_als
 
 PROJECT = "/ableton/Water Project/Water.als"
@@ -80,6 +80,24 @@ def test_structural_change_is_named_from_the_diff(db_path, fixture_xml, tmp_path
     second = _record(PROJECT, faster_xml, faster_parsed, db_path)
     name = db.get_snapshot(second, path=db_path)["name_auto"]
     assert "Tempo changed" in name, name
+
+
+def test_device_added_to_existing_track_is_named_from_the_diff(db_path, fixture_xml, tmp_path, parsed):
+    """A second instance of a device already on the track (the real bug: a
+    duplicate reverb went unreported because diff.py used to dedupe with a
+    set) must show up in the generated name."""
+    _record(PROJECT, fixture_xml, parsed, db_path)
+
+    extra_device_xml = with_duplicate_device(fixture_xml, "Bass", "Tuner")
+    als = tmp_path / "extra_device.als"
+    import gzip
+
+    als.write_bytes(gzip.compress(extra_device_xml, 6))
+    extra_device_parsed = parse_als(str(als))
+
+    second = _record(PROJECT, extra_device_xml, extra_device_parsed, db_path)
+    name = db.get_snapshot(second, path=db_path)["name_auto"]
+    assert "Tuner" in name and "added" in name, name
 
 
 def test_returning_to_a_previous_state_is_recorded(db_path, fixture_xml, parsed):

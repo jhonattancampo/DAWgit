@@ -126,6 +126,26 @@ def test_device_added():
     print(f"  Test 6 — device added:        ✓  {result.summary!r}")
 
 
+def test_duplicate_device_added_is_reported():
+    """set() collapsed {PluginDevice} vs {PluginDevice, PluginDevice} to an
+    empty diff — a real duplicate reverb went unreported. Counter must catch it."""
+    a = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice"])])
+    b = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice", "PluginDevice"])])
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert result.summary == "Device 'PluginDevice' added to '5-Audio'"
+    print(f"  Test 6b — duplicate device added: ✓  {result.summary!r}")
+
+
+def test_duplicate_device_removed_is_reported():
+    a = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice", "PluginDevice"])])
+    b = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice"])])
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert result.summary == "Device 'PluginDevice' removed from '5-Audio'"
+    print(f"  Test 6c — duplicate device removed: ✓  {result.summary!r}")
+
+
 def test_multiple_changes_summary_truncated():
     a = _snap(
         tempo=120.0,
@@ -164,5 +184,7 @@ if __name__ == "__main__":
     test_track_removed()
     test_track_renamed()
     test_device_added()
+    test_duplicate_device_added_is_reported()
+    test_duplicate_device_removed_is_reported()
     test_multiple_changes_summary_truncated()
-    print("\n11/11 tests passed.")
+    print("\n13/13 tests passed.")
