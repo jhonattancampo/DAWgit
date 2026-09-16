@@ -53,11 +53,8 @@ def diff_snapshots(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
         if ta["track_name"] != tb["track_name"]:
             changes.append(f"Track renamed: '{ta['track_name']}' → '{tb['track_name']}'")
 
-        # devices are stored as a flat list on snapshot_tracks rows;
-        # the dict passed here comes from get_snapshot which returns track rows.
-        # device lists live on ParsedTrack during parsing but are NOT persisted
-        # per-track in the current schema — they're accessible via xml_raw.
-        # For Phase 1 we compare devices only when the caller provides them.
+        # Devices are persisted per track in snapshot_devices and returned by
+        # db.get_snapshot; callers building a snapshot dict by hand may omit them.
         devices_a = set(ta.get("devices") or [])
         devices_b = set(tb.get("devices") or [])
         track_name = tb["track_name"]

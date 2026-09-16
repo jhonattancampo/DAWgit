@@ -2,8 +2,10 @@
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from parser import ParsedSnapshot
 
@@ -11,16 +13,27 @@ DB_PATH = os.environ.get("DB_PATH", "/app/data/dawgit.db")
 _SCHEMA = Path(__file__).with_name("schema.sql").read_text()
 
 
-def _connect(path: str = DB_PATH) -> sqlite3.Connection:
+@contextmanager
+def _session(path: str = DB_PATH) -> Iterator[sqlite3.Connection]:
+    """Open a connection, run inside a transaction, and always close it.
+
+    sqlite3's own context manager commits/rolls back but does NOT close,
+    which leaks the handle until garbage collection.
+    """
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    conn.execute("PRAGMA busy_timeout = 5000")
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db(path: str = DB_PATH) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with _connect(path) as conn:
+    with _session(path) as conn:
         conn.executescript(_SCHEMA)
 
 
@@ -32,7 +45,7 @@ def save_snapshot(
 ) -> int:
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    with _connect(path) as conn:
+    with _session(path) as conn:
         cur = conn.execute(
             "INSERT INTO snapshots (project_path, timestamp, name_auto, xml_raw) VALUES (?, ?, ?, ?)",
             (project_path, timestamp, None, xml_raw),
@@ -62,16 +75,17 @@ def save_snapshot(
 
 
 def get_snapshots(project_path: str, path: str = DB_PATH) -> list[dict]:
-    with _connect(path) as conn:
+    with _session(path) as conn:
         rows = conn.execute(
-            "SELECT id, timestamp, name_auto FROM snapshots WHERE project_path = ? ORDER BY timestamp DESC",
+            "SELECT id, timestamp, name_auto FROM snapshots WHERE project_path = ? "
+            "ORDER BY timestamp DESC, id DESC",
             (project_path,),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_snapshot(snapshot_id: int, path: str = DB_PATH) -> dict | None:
-    with _connect(path) as conn:
+    with _session(path) as conn:
         row = conn.execute(
             "SELECT * FROM snapshots WHERE id = ?", (snapshot_id,)
         ).fetchone()
@@ -107,7 +121,7 @@ def get_snapshot(snapshot_id: int, path: str = DB_PATH) -> dict | None:
 
 
 def update_snapshot_name(snapshot_id: int, name: str, path: str = DB_PATH) -> None:
-    with _connect(path) as conn:
+    with _session(path) as conn:
         conn.execute(
             "UPDATE snapshots SET name_auto = ? WHERE id = ?", (name, snapshot_id)
         )

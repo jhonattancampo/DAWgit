@@ -35,7 +35,10 @@ def _find_master_track(liveset: ET.Element) -> ET.Element | None:
 
     Live 11 uses <MasterTrack>, Live 12 renamed it to <MainTrack>.
     """
-    return liveset.find("MasterTrack") or liveset.find("MainTrack")
+    master = liveset.find("MasterTrack")
+    if master is None:
+        master = liveset.find("MainTrack")
+    return master
 
 
 def _device_name(device_el: ET.Element) -> str:
