@@ -5,14 +5,18 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 import db
+import restore as restore_service
 import watcher
 from diff import diff_snapshots
 from models import (
     DiffResponse,
+    HealthResponse,
+    RenameRequest,
+    RestoreResponse,
     SnapshotDetail,
     SnapshotListItem,
     TrackDetail,
@@ -41,7 +45,7 @@ async def lifespan(app: FastAPI):
     watcher.stop_watcher()
 
 
-app = FastAPI(title="DAWgit", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="DAWgit", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,8 +61,13 @@ def _snapshot_to_detail(snap: dict) -> SnapshotDetail:
         id=snap["id"],
         timestamp=snap["timestamp"],
         name_auto=snap["name_auto"],
+        name_user=snap["name_user"],
         project_path=snap["project_path"],
         tempo=meta["tempo"],
+        tempo_automated=bool(meta["tempo_automated"]),
+        tempo_min=meta["tempo_min"],
+        tempo_max=meta["tempo_max"],
+        tempo_points=meta["tempo_points"],
         time_sig=f"{meta['time_sig_num']}/{meta['time_sig_den']}",
         tracks=[
             TrackDetail(
@@ -72,6 +81,25 @@ def _snapshot_to_detail(snap: dict) -> SnapshotDetail:
     )
 
 
+def _require_snapshot(snapshot_id: int) -> dict:
+    snap = db.get_snapshot(snapshot_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return snap
+
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    db_ok = db.ping()
+    watch = watcher.watcher_status()
+    return HealthResponse(
+        status="ok" if db_ok else "degraded",
+        db_ok=db_ok,
+        watcher_active=watch["active"],
+        watch_path=watch["path"],
+    )
+
+
 @app.get("/snapshots", response_model=list[SnapshotListItem])
 def list_snapshots(project: str) -> list[SnapshotListItem]:
     rows = db.get_snapshots(project)
@@ -80,7 +108,8 @@ def list_snapshots(project: str) -> list[SnapshotListItem]:
             id=r["id"],
             timestamp=r["timestamp"],
             name_auto=r["name_auto"],
-            project_path=project,
+            name_user=r["name_user"],
+            project_path=r["project_path"],
         )
         for r in rows
     ]
@@ -88,18 +117,50 @@ def list_snapshots(project: str) -> list[SnapshotListItem]:
 
 @app.get("/snapshots/{snapshot_id}", response_model=SnapshotDetail)
 def get_snapshot(snapshot_id: int) -> SnapshotDetail:
-    snap = db.get_snapshot(snapshot_id)
-    if snap is None:
+    return _snapshot_to_detail(_require_snapshot(snapshot_id))
+
+
+@app.patch("/snapshots/{snapshot_id}", response_model=SnapshotDetail)
+def rename_snapshot(snapshot_id: int, body: RenameRequest) -> SnapshotDetail:
+    _require_snapshot(snapshot_id)
+    db.update_snapshot_user_name(snapshot_id, body.name)
+    return _snapshot_to_detail(_require_snapshot(snapshot_id))
+
+
+@app.delete("/snapshots/{snapshot_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_snapshot(snapshot_id: int) -> Response:
+    if not db.delete_snapshot(snapshot_id):
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    return _snapshot_to_detail(snap)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/snapshots/{snapshot_id}/xml")
 def get_snapshot_xml(snapshot_id: int) -> dict:
-    snap = db.get_snapshot(snapshot_id)
-    if snap is None:
+    xml = db.get_snapshot_xml(snapshot_id)
+    if xml is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    return {"snapshot_id": snapshot_id, "xml": snap["xml_raw"]}
+    return {"snapshot_id": snapshot_id, "xml": xml}
+
+
+@app.post("/snapshots/{snapshot_id}/restore", response_model=RestoreResponse)
+def restore_snapshot(snapshot_id: int) -> RestoreResponse:
+    try:
+        result = restore_service.restore_snapshot(snapshot_id)
+    except restore_service.SnapshotNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except restore_service.ProjectPathUnavailable as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.exception("Restore failed for snapshot %d", snapshot_id)
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
+
+    return RestoreResponse(
+        snapshot_id=result.snapshot_id,
+        project_path=result.project_path,
+        backup_path=result.backup_path,
+        new_snapshot_id=result.new_snapshot_id,
+        warning=result.warning,
+    )
 
 
 @app.get("/diff/{id_a}/{id_b}", response_model=DiffResponse)

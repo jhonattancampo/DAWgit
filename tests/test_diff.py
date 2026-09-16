@@ -1,17 +1,29 @@
 """Tests for the diff engine using parsed snapshot data."""
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from diff import diff_snapshots
 
 
-def _snap(tempo=120.0, num=4, den=4, tracks=None):
+def _snap(
+    tempo=120.0,
+    num=4,
+    den=4,
+    tracks=None,
+    tempo_automated=False,
+    tempo_min=None,
+    tempo_max=None,
+    tempo_points=0,
+):
     """Build a minimal snapshot dict for diff testing."""
     return {
-        "meta": {"tempo": tempo, "time_sig_num": num, "time_sig_den": den},
+        "meta": {
+            "tempo": tempo,
+            "time_sig_num": num,
+            "time_sig_den": den,
+            "tempo_automated": tempo_automated,
+            "tempo_min": tempo_min,
+            "tempo_max": tempo_max,
+            "tempo_points": tempo_points,
+        },
         "tracks": tracks or [],
     }
 
@@ -38,6 +50,70 @@ def test_tempo_change():
     assert "120" in result.changes[0] and "128" in result.changes[0]
     assert result.summary == "Tempo changed: 120 → 128 BPM"
     print(f"  Test 2 — tempo change:        ✓  {result.summary!r}")
+
+
+def test_automated_base_change_only():
+    """Manual (base) moved, the envelope stays identical — the base value
+    isn't what plays, so the message must say so, not just show the number."""
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    b = _snap(tempo=126.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    result = diff_snapshots(a, b)
+    assert result.changes == ["Tempo base: 120 → 126 BPM (manda la automation: 80–120 BPM)"]
+    print(f"  Test 2b — automated base change only: ✓  {result.changes[0]!r}")
+
+
+def test_automated_envelope_change_only():
+    """Base (Manual) unchanged, but the automation curve moved — today
+    that's invisible; the diff must surface it."""
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    b = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=140.0, tempo_points=9)
+    result = diff_snapshots(a, b)
+    assert result.changes == [
+        "Automation de tempo cambió: ahora corre 80–140 BPM (9 pts) — antes 80–120 BPM (7 pts)"
+    ]
+    print(f"  Test 2c — automated envelope change only: ✓  {result.changes[0]!r}")
+
+
+def test_automated_base_and_envelope_change_both_reported():
+    """Base and envelope moving together are two independent facts, not one
+    merged sentence — the reader needs both, separately."""
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=7)
+    b = _snap(tempo=126.0, tempo_automated=True, tempo_min=80.0, tempo_max=140.0, tempo_points=9)
+    result = diff_snapshots(a, b)
+    assert result.changes == [
+        "Tempo base: 120 → 126 BPM (manda la automation: 80–140 BPM)",
+        "Automation de tempo cambió: ahora corre 80–140 BPM (9 pts) — antes 80–120 BPM (7 pts)",
+    ]
+    print(f"  Test 2d — automated base + envelope change: ✓  {result.changes}")
+
+
+def test_tempo_automation_added_without_manual_change():
+    a = _snap(tempo=120.0)
+    b = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=5)
+    result = diff_snapshots(a, b)
+    assert result.changes == [
+        "Automation de tempo activada: ahora corre 80–120 BPM (5 pts) — antes fijo en 120 BPM"
+    ]
+    print(f"  Test 2e — automation added: ✓  {result.changes[0]!r}")
+
+
+def test_tempo_automation_removed_without_manual_change():
+    a = _snap(tempo=120.0, tempo_automated=True, tempo_min=80.0, tempo_max=120.0, tempo_points=5)
+    b = _snap(tempo=120.0)
+    result = diff_snapshots(a, b)
+    assert result.changes == [
+        "Automation de tempo desactivada: ahora fijo en 120 BPM — antes corría 80–120 BPM (5 pts)"
+    ]
+    print(f"  Test 2f — automation removed: ✓  {result.changes[0]!r}")
+
+
+def test_non_automated_tempo_change_is_unaffected():
+    """A set with no tempo automation must report exactly as it did before
+    this feature existed."""
+    a = _snap(tempo=120.0)
+    b = _snap(tempo=128.0)
+    result = diff_snapshots(a, b)
+    assert result.summary == "Tempo changed: 120 → 128 BPM"
 
 
 def test_track_added():
@@ -76,6 +152,26 @@ def test_device_added():
     print(f"  Test 6 — device added:        ✓  {result.summary!r}")
 
 
+def test_duplicate_device_added_is_reported():
+    """set() collapsed {PluginDevice} vs {PluginDevice, PluginDevice} to an
+    empty diff — a real duplicate reverb went unreported. Counter must catch it."""
+    a = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice"])])
+    b = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice", "PluginDevice"])])
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert result.summary == "Device 'PluginDevice' added to '5-Audio'"
+    print(f"  Test 6b — duplicate device added: ✓  {result.summary!r}")
+
+
+def test_duplicate_device_removed_is_reported():
+    a = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice", "PluginDevice"])])
+    b = _snap(tracks=[_track("1", "5-Audio", "Audio", devices=["PluginDevice"])])
+    result = diff_snapshots(a, b)
+    assert len(result.changes) == 1
+    assert result.summary == "Device 'PluginDevice' removed from '5-Audio'"
+    print(f"  Test 6c — duplicate device removed: ✓  {result.summary!r}")
+
+
 def test_multiple_changes_summary_truncated():
     a = _snap(
         tempo=120.0,
@@ -106,9 +202,17 @@ if __name__ == "__main__":
     print("Running diff tests...\n")
     test_identical_snapshots()
     test_tempo_change()
+    test_automated_base_change_only()
+    test_automated_envelope_change_only()
+    test_automated_base_and_envelope_change_both_reported()
+    test_tempo_automation_added_without_manual_change()
+    test_tempo_automation_removed_without_manual_change()
+    test_non_automated_tempo_change_is_unaffected()
     test_track_added()
     test_track_removed()
     test_track_renamed()
     test_device_added()
+    test_duplicate_device_added_is_reported()
+    test_duplicate_device_removed_is_reported()
     test_multiple_changes_summary_truncated()
-    print("\n7/7 tests passed.")
+    print("\n15/15 tests passed.")

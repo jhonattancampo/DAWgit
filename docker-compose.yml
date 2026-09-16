@@ -5,12 +5,13 @@ services:
       - "8001:8000"
     volumes:
       - .:/app
-      - ${ABLETON_PROJECTS_PATH}:/ableton:ro
-      - dawgit_data:/app/data
+      # Writable: restore has to be able to overwrite the .als
+      - ${ABLETON_PROJECTS_PATH}:/ableton
+      - ~/DAWgit-data:/app/data
     environment:
       - ABLETON_PROJECTS_PATH=/ableton
+      - DB_PATH=/app/data/dawgit.db
+      # Backups live outside the watched tree so they never trigger snapshots
+      - BACKUP_DIR=/app/data/.dawgit-backup
     env_file:
       - .env
-
-volumes:
-  dawgit_data:

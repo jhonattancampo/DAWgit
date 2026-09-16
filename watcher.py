@@ -3,13 +3,12 @@
 import gzip
 import logging
 import threading
-from pathlib import Path
+from pathlib import PurePath
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from watchdog.observers import Observer
 
-import db
-from diff import diff_snapshots
+import snapshots
 from parser import parse_als
 
 logger = logging.getLogger(__name__)
@@ -19,6 +18,15 @@ _watch_path: str | None = None
 _lock = threading.Lock()
 
 DEBOUNCE_SECONDS = 0.5
+
+# Directory names that must never produce snapshots: Ableton's own rolling
+# backups, and ours. Restore writes backups outside the watched tree, but the
+# exclusion stays as a safety net if someone points the watcher at the volume.
+EXCLUDED_DIRS = {"Backup", ".dawgit-backup"}
+
+
+def _is_excluded(path: str) -> bool:
+    return any(part in EXCLUDED_DIRS for part in PurePath(path).parts)
 
 
 class _ALSHandler(FileSystemEventHandler):
@@ -32,8 +40,8 @@ class _ALSHandler(FileSystemEventHandler):
         path = str(event.src_path)
         if not path.endswith(".als"):
             return
-        if "/Backup/" in path or "\\Backup\\" in path:
-            logger.info("Skipping backup file: %s", path)
+        if _is_excluded(path):
+            logger.info("Skipping excluded path: %s", path)
             return
         self._schedule(path)
 
@@ -51,35 +59,9 @@ class _ALSHandler(FileSystemEventHandler):
         try:
             parsed = parse_als(path)
             with open(path, "rb") as f:
-                xml_raw = gzip.decompress(f.read()).decode("utf-8")
+                xml_bytes = gzip.decompress(f.read())
 
-            existing = db.get_snapshots(path)
-            if existing:
-                prev = db.get_snapshot(existing[0]["id"])
-                result = diff_snapshots(prev, {
-                    "meta": {
-                        "tempo": parsed.tempo,
-                        "time_sig_num": parsed.time_sig_num,
-                        "time_sig_den": parsed.time_sig_den,
-                        "track_count": len(parsed.tracks),
-                    },
-                    "tracks": [
-                        {
-                            "track_id": t.track_id,
-                            "track_name": t.track_name,
-                            "track_type": t.track_type,
-                            "devices": t.devices,
-                        }
-                        for t in parsed.tracks
-                    ],
-                })
-                name = result.summary
-            else:
-                name = "Initial snapshot"
-
-            snapshot_id = db.save_snapshot(path, xml_raw, parsed)
-            db.update_snapshot_name(snapshot_id, name)
-            logger.info("Snapshot saved id=%d name=%r", snapshot_id, name)
+            snapshots.record_snapshot(path, xml_bytes, parsed)
         except Exception:
             logger.exception("Failed to process snapshot for %s", path)
 
