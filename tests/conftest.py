@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import db
+from parser import _find_master_track
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.als"
 
@@ -44,10 +45,23 @@ def db_path(tmp_path, monkeypatch) -> str:
 
 
 def with_tempo(xml_bytes: bytes, bpm: float) -> bytes:
-    """Structural change: a different tempo the diff engine can see."""
+    """Structural change: a different tempo the diff engine can see.
+
+    The master track is resolved through the parser rather than a fixed path,
+    so a Live 12 fixture (<MainTrack>) works the same as a Live 11 one
+    (<MasterTrack>). Hardcoding the Live 11 name here would break the snapshot
+    and restore suites on a fixture that has nothing to do with them.
+    """
     root = ET.fromstring(xml_bytes)
-    manual = root.find("LiveSet/MasterTrack/DeviceChain/Mixer/Tempo/Manual")
-    assert manual is not None, "fixture has no master tempo element"
+    liveset = root.find("LiveSet")
+    assert liveset is not None, "fixture has no <LiveSet> element"
+
+    master = _find_master_track(liveset)
+    assert master is not None, "fixture has no master/main track"
+
+    manual = master.find("DeviceChain/Mixer/Tempo/Manual")
+    assert manual is not None, "master track has no tempo element"
+
     manual.set("Value", str(bpm))
     return ET.tostring(root, encoding="utf-8")
 
