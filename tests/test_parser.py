@@ -41,10 +41,11 @@ def test_save_and_retrieve(db_path, fixture_path, fixture_xml):
     # The blob is fetched separately now; it must round-trip exactly.
     assert db.get_snapshot_xml(snapshot_id, path=db_path).encode("utf-8") == fixture_xml
 
-    # Devices: 'Bass' track has OriginalSimpler + Tuner
+    # Devices: 'Bass' track has Simpler + Tuner — the real Ableton UI names,
+    # not the internal tags (OriginalSimpler, Tuner)
     bass_track = next((t for t in result["tracks"] if t["track_name"] == "Bass"), None)
     assert bass_track is not None, "Bass track not found in results"
-    assert set(bass_track["devices"]) == {"OriginalSimpler", "Tuner"}, (
+    assert set(bass_track["devices"]) == {"Simpler", "Tuner"}, (
         f"Unexpected devices on Bass: {bass_track['devices']}"
     )
 
@@ -90,6 +91,24 @@ def test_duplicate_devices_are_preserved_in_the_parsed_list(fixture_xml, tmp_pat
     parsed = parse_als(str(als))
     bass = next(t for t in parsed.tracks if t.track_name == "Bass")
     assert bass.devices.count("Tuner") == 2
+
+
+def test_native_device_names_use_the_ableton_ui_label():
+    """Native devices don't self-report a name in the XML — the tag is
+    Ableton's internal class name, not what's on screen. Built from a real
+    scan of the user's library (tags actually seen), not guessed."""
+    cases = [
+        ("OriginalSimpler", "Simpler"),
+        ("Eq8", "EQ Eight"),
+        ("StereoGain", "Utility"),
+        ("Compressor2", "Compressor"),
+        ("DrumGroupDevice", "Drum Rack"),
+        ("AudioEffectGroupDevice", "Audio Effect Rack"),
+        ("Reverb", "Reverb"),  # tag already matches the UI label
+    ]
+    for tag, expected in cases:
+        el = ET.fromstring(f"<{tag} />")
+        assert _device_name(el, "Bass") == expected, f"{tag} -> expected {expected!r}"
 
 
 def test_third_party_plugin_name_is_extracted(fixture_xml, tmp_path):

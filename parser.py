@@ -18,6 +18,48 @@ _PLUGIN_NAME_PATHS = (
     "PluginDesc/AuPluginInfo/Name",
 )
 
+# Native devices don't self-report a display name anywhere in the XML —
+# checked first: DeviceId/@Name and BrowserContentPath both looked promising
+# but neither holds up. DeviceId/@Name is just the tag repeated (confirmed
+# across a real library scan, 1686 devices, 0 genuine mismatches — the only
+# "mismatches" were a same-named child device nested inside a Rack, an
+# artifact of a non-scoped `.//` search, not a real alternate name).
+# BrowserContentPath tracks "last browsed content", which coincides with the
+# device name for simple effects (Reverb, Gate, Delay) but is a sample or
+# preset filename for Simpler/Sampler/Racks (e.g. a Simpler shows the loaded
+# .wav there, not "Simpler") — unusable without a per-tag allowlist, which is
+# no better than this map. So: a map, built from tags actually seen across
+# this user's real Ableton library (~1700 devices, 104 files), not guessed.
+# Renaming a device in Ableton still wins over this (see _device_name) — this
+# only fires for an unrenamed native device.
+_NATIVE_DEVICE_NAMES = {
+    "Amp": "Amp",
+    "AudioEffectGroupDevice": "Audio Effect Rack",
+    "AutoFilter": "Auto Filter",
+    "AutoPan": "Auto Pan",
+    "Cabinet": "Cabinet",
+    "Compressor2": "Compressor",
+    "Delay": "Delay",
+    "DrumBuss": "Drum Buss",
+    "DrumGroupDevice": "Drum Rack",
+    "Eq8": "EQ Eight",
+    "Gate": "Gate",
+    "GlueCompressor": "Glue Compressor",
+    "InstrumentGroupDevice": "Instrument Rack",
+    "InstrumentVector": "Wavetable",
+    "MidiArpeggiator": "Arpeggiator",
+    "MultiSampler": "Sampler",
+    "OriginalSimpler": "Simpler",
+    "Overdrive": "Overdrive",
+    "Pedal": "Pedal",
+    "PhaserNew": "Phaser-Flanger",
+    "Reverb": "Reverb",
+    "Roar": "Roar",
+    "Saturator": "Saturator",
+    "StereoGain": "Utility",
+    "Tuner": "Tuner",
+}
+
 
 TRACK_TYPE_MAP = {
     "MidiTrack":   "MIDI",
@@ -82,13 +124,13 @@ def _device_name(device_el: ET.Element, track_name: str) -> str:
     if renamed:
         return renamed
 
-    device_id = device_el.find(".//DeviceId")
-    if device_id is not None and device_id.get("Name", "").strip():
-        return device_id.get("Name").strip()
+    native_name = _NATIVE_DEVICE_NAMES.get(device_el.tag)
+    if native_name is not None:
+        return native_name
 
     logger.warning(
         "Unrecognized device <%s> on track %r — no UserName, plugin name, or "
-        "DeviceId found; falling back to the tag name",
+        "known native device mapping; falling back to the tag name",
         device_el.tag, track_name,
     )
     return device_el.tag
